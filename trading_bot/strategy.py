@@ -18,13 +18,21 @@ class StrategyEngine:
 
         candle = df.iloc[-1]
         prev = df.iloc[-2]
-        levels = [candle["vwap"], candle["pp"], candle["r1"]]
 
         bearish = candle["close"] < candle["vwap"] and candle["ema9"] < candle["ema20"] and candle["rsi"] < 45
         bullish = candle["close"] > candle["vwap"] and candle["ema9"] > candle["ema20"] and candle["rsi"] > 55
 
+        short_rejection_levels = [candle["vwap"], candle["pp"], candle["r1"]]
+        long_rejection_levels = [candle["vwap"], candle["pp"], candle["s1"]]
+
         # Setup A: VWAP + Pivot rejection (short)
-        if bearish and self._touches_resistance(candle, levels) and candle["close"] < candle["vwap"] and candle["close"] < candle["ema9"] and candle["volume"] >= prev["volume"]:
+        if (
+            bearish
+            and self._touches_resistance(candle, short_rejection_levels)
+            and candle["close"] < candle["vwap"]
+            and candle["close"] < candle["ema9"]
+            and candle["volume"] >= prev["volume"]
+        ):
             stop = max(candle["vwap"] * 1.0025, df["high"].tail(3).max())
             return TradeSignal(
                 symbol=symbol,
@@ -39,7 +47,12 @@ class StrategyEngine:
             )
 
         # Setup A mirror: VWAP + Pivot rejection (long)
-        if bullish and self._touches_support(candle, levels) and candle["close"] > candle["ema9"] and candle["volume"] >= prev["volume"]:
+        if (
+            bullish
+            and self._touches_support(candle, long_rejection_levels)
+            and candle["close"] > candle["ema9"]
+            and candle["volume"] >= prev["volume"]
+        ):
             stop = min(candle["vwap"] * 0.9975, df["low"].tail(3).min())
             return TradeSignal(
                 symbol=symbol,
@@ -49,7 +62,7 @@ class StrategyEngine:
                 stop_loss=float(stop),
                 target_1=float(candle["r1"]),
                 target_2=float(candle["r2"]),
-                reason="Bullish trend + rejection near VWAP/PP with volume confirmation",
+                reason="Bullish trend + rejection near VWAP/PP/S1 with volume confirmation",
                 created_at=now,
             )
 
@@ -94,6 +107,8 @@ class StrategyEngine:
     def _is_bearish_impulse(self, candle: pd.Series) -> bool:
         return (
             candle["close"] < candle["open"]
+            and pd.notna(candle["avg_vol_20"])
+            and pd.notna(candle["avg_body_20"])
             and candle["volume"] >= self.cfg.impulse_volume_multiplier * candle["avg_vol_20"]
             and candle["body"] >= self.cfg.large_candle_body_multiplier * candle["avg_body_20"]
         )
@@ -101,6 +116,8 @@ class StrategyEngine:
     def _is_bullish_impulse(self, candle: pd.Series) -> bool:
         return (
             candle["close"] > candle["open"]
+            and pd.notna(candle["avg_vol_20"])
+            and pd.notna(candle["avg_body_20"])
             and candle["volume"] >= self.cfg.impulse_volume_multiplier * candle["avg_vol_20"]
             and candle["body"] >= self.cfg.large_candle_body_multiplier * candle["avg_body_20"]
         )

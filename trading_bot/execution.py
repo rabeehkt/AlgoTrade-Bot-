@@ -60,7 +60,7 @@ class OrderExecutor:
                     validity=self.kite.VALIDITY_DAY,
                 )
                 self.logger.info(
-                    "ENTRY | symbol=%s setup=%s side=%s entry=%.2f sl=%.2f t1=%.2f t2=%s qty=%s rr=%.2f",
+                    "ENTRY | symbol=%s setup=%s side=%s entry=%.2f sl=%.2f t1=%.2f t2=%s qty=%s rr=%.2f reason=%s",
                     signal.symbol,
                     signal.setup.value,
                     signal.side.value,
@@ -70,6 +70,7 @@ class OrderExecutor:
                     signal.target_2,
                     qty,
                     self._rr(signal),
+                    signal.reason,
                 )
                 return order_id
             except Exception as err:
@@ -79,36 +80,44 @@ class OrderExecutor:
                     return None
         return None
 
-    def place_exit(self, position: OpenPosition, reason: str) -> str | None:
+    def place_exit(self, position: OpenPosition, reason: str, exit_price: float | None = None) -> str | None:
         if self.kill_switch:
             return None
 
         transaction_type = self.kite.TRANSACTION_TYPE_SELL if position.side == Side.BUY else self.kite.TRANSACTION_TYPE_BUY
 
-        try:
-            order_id = self.kite.place_order(
-                variety=self.kite.VARIETY_REGULAR,
-                exchange=self.kite.EXCHANGE_NSE,
-                tradingsymbol=position.symbol,
-                transaction_type=transaction_type,
-                quantity=position.quantity,
-                product=self.kite.PRODUCT_MIS,
-                order_type=self.kite.ORDER_TYPE_MARKET,
-                validity=self.kite.VALIDITY_DAY,
-            )
-            self.logger.info(
-                "EXIT | symbol=%s setup=%s side=%s entry=%.2f exit_reason=%s",
-                position.symbol,
-                position.setup.value,
-                position.side.value,
-                position.entry,
-                reason,
-            )
-            return order_id
-        except Exception as err:
-            self._record_failure(err)
-            self.logger.error("Exit order failed for %s reason=%s", position.symbol, reason)
-            return None
+        for attempt in range(self.cfg.max_order_retries + 1):
+            try:
+                order_id = self.kite.place_order(
+                    variety=self.kite.VARIETY_REGULAR,
+                    exchange=self.kite.EXCHANGE_NSE,
+                    tradingsymbol=position.symbol,
+                    transaction_type=transaction_type,
+                    quantity=position.quantity,
+                    product=self.kite.PRODUCT_MIS,
+                    order_type=self.kite.ORDER_TYPE_MARKET,
+                    validity=self.kite.VALIDITY_DAY,
+                )
+                self.logger.info(
+                    "EXIT | symbol=%s setup=%s side=%s qty=%s entry=%.2f sl=%.2f t1=%.2f t2=%s exit_reason=%s exit_price=%s",
+                    position.symbol,
+                    position.setup.value,
+                    position.side.value,
+                    position.quantity,
+                    position.entry,
+                    position.stop_loss,
+                    position.target_1,
+                    position.target_2,
+                    reason,
+                    f"{exit_price:.2f}" if exit_price is not None else "NA",
+                )
+                return order_id
+            except Exception as err:
+                self._record_failure(err)
+                if attempt >= self.cfg.max_order_retries:
+                    self.logger.error("Exit order rejected after retries for %s reason=%s", position.symbol, reason)
+                    return None
+        return None
 
     def _rr(self, signal: TradeSignal) -> float:
         risk = abs(signal.entry - signal.stop_loss)
