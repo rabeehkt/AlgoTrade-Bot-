@@ -15,15 +15,19 @@ class DataClient:
         self.instrument_map = self._load_instruments()
 
     def _load_instruments(self) -> dict[str, int]:
-        # Load NSE Equity
-        instruments = self.kite.instruments(exchange=self.cfg.exchange)
-        mapping = {item["tradingsymbol"]: item["instrument_token"] for item in instruments}
-        
-        # Load Indices (specifically NIFTY 50)
+        # Load full instrument master once. This is safer than using a non-existent
+        # `INDICES` exchange endpoint.
+        instruments = self.kite.instruments()
+        mapping = {
+            item["tradingsymbol"]: item["instrument_token"]
+            for item in instruments
+            if item.get("exchange") == self.cfg.exchange and item.get("tradingsymbol")
+        }
+
+        # Add index token (specifically NIFTY 50)
         try:
-            indices = self.kite.instruments(exchange="INDICES")
-            for item in indices:
-                if item["name"] == "NIFTY 50":
+            for item in instruments:
+                if item.get("name") == "NIFTY 50" and item.get("segment") == "INDICES":
                     mapping["NIFTY 50"] = item["instrument_token"]
                     break
         except Exception as e:

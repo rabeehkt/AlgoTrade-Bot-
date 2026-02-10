@@ -27,9 +27,9 @@ class IntradayTradingBot:
             invalid = [s for s in runtime.symbols if s not in NIFTY100_SYMBOLS]
             if invalid:
                 raise ValueError(f"Only NIFTY100 symbols are allowed. Invalid: {invalid}")
-            self.symbols = runtime.symbols
+            self.symbols = [s for s in runtime.symbols if s not in self.cfg.excluded_symbols]
         else:
-            self.symbols = NIFTY100_SYMBOLS
+            self.symbols = [s for s in NIFTY100_SYMBOLS if s not in self.cfg.excluded_symbols]
 
         self.kite = KiteConnect(api_key=creds.api_key)
         self.kite.set_access_token(creds.access_token)
@@ -80,7 +80,7 @@ class IntradayTradingBot:
             time.sleep(max(5, int((next_tick - datetime.now(IST)).total_seconds())))
 
     def _scan_and_trade(self, now: datetime) -> None:
-        # Rule: no new entries after 14:45 IST.
+        # Rule: no new entries after configured cutoff (default 11:30 IST).
         if now.time() > self.cfg.last_entry:
             return
             
@@ -123,16 +123,17 @@ class IntradayTradingBot:
             if intraday.empty:
                 continue
 
-                df = add_indicators(
-                    intraday,
-                    self.pivots_by_symbol[symbol],
-                    ema_fast=self.cfg.ema_fast_period,
-                    ema_slow=self.cfg.ema_slow_period,
-                    rsi_period=self.cfg.rsi_period,
-                )
-                signal = self.strategy.evaluate(symbol, df, now, nifty_data)
-                if signal:
-                    potential_signals.append(signal)
+            df = add_indicators(
+                intraday,
+                self.pivots_by_symbol[symbol],
+                ema_fast=self.cfg.ema_fast_period,
+                ema_slow=self.cfg.ema_slow_period,
+                rsi_period=self.cfg.rsi_period,
+                atr_period=self.cfg.atr_period,
+            )
+            signal = self.strategy.evaluate(symbol, df, now, nifty_data)
+            if signal:
+                potential_signals.append(signal)
 
         # Rank candidates: SSS (desc), Relative Volume (desc)
         potential_signals.sort(key=lambda s: (s.score, s.relative_volume), reverse=True)
@@ -188,6 +189,7 @@ class IntradayTradingBot:
                 ema_fast=self.cfg.ema_fast_period,
                 ema_slow=self.cfg.ema_slow_period,
                 rsi_period=self.cfg.rsi_period,
+                atr_period=self.cfg.atr_period,
             )
             last = df.iloc[-1]
             try:

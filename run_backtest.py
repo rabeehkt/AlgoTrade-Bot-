@@ -63,6 +63,11 @@ _STATIC_TOKENS = {
 
 _INSTRUMENTS_CACHE = None
 
+
+def _is_access_denied_error(err_msg: str) -> bool:
+    lowered = err_msg.lower()
+    return "accessdenied" in lowered or "access denied" in lowered
+
 def fetch_real_data(symbol: str, days: int) -> pd.DataFrame:
     """Fetches real 5-minute historical data from Kite with strict cooldowns."""
     global _INSTRUMENTS_CACHE
@@ -87,11 +92,16 @@ def fetch_real_data(symbol: str, days: int) -> pd.DataFrame:
             for attempt in range(3):
                 try:
                     print(f"Fetching instruments list (not in static map or token invalid)...")
-                    _INSTRUMENTS_CACHE = kite.instruments("NSE") + kite.instruments("INDICES")
+                    # Pull the full master once and derive both equities + indices locally.
+                    # `kite.instruments("INDICES")` is not a valid exchange and can return XML AccessDenied.
+                    _INSTRUMENTS_CACHE = kite.instruments()
                     break
                 except Exception as e:
                     err_msg = str(e)
                     print(f"Error fetching instruments: {e}")
+                    if _is_access_denied_error(err_msg):
+                        print("Instrument master fetch is access denied; skipping refresh and using current token map.")
+                        break
                     if "429" in err_msg or "Too many requests" in err_msg:
                         print("Status 429 on instrument fetch: Sleeping 10.5s mandatory cooldown...")
                         time.sleep(10.5)
@@ -100,9 +110,9 @@ def fetch_real_data(symbol: str, days: int) -> pd.DataFrame:
         
         if _INSTRUMENTS_CACHE is not None:
             if sym == "NIFTY 50":
-                return next((i["instrument_token"] for i in _INSTRUMENTS_CACHE if i["name"] == "NIFTY 50" and i["segment"] == "INDICES"), None)
+                return next((i["instrument_token"] for i in _INSTRUMENTS_CACHE if i.get("name") == "NIFTY 50" and i.get("segment") == "INDICES"), None)
             else:
-                return next((i["instrument_token"] for i in _INSTRUMENTS_CACHE if i["tradingsymbol"] == sym), None)
+                return next((i["instrument_token"] for i in _INSTRUMENTS_CACHE if i.get("tradingsymbol") == sym), None)
         return None
 
     if not token:
@@ -168,16 +178,23 @@ def main():
     parser.add_argument("--real", action="store_true", help="Use real data from Kite (requires .env credentials)")
     parser.add_argument("--nifty50", action="store_true", help="Run backtest on all NIFTY 100 symbols (legacy flag name)")
     parser.add_argument("--universe", action="store_true", help="Run backtest on all NIFTY 100 symbols")
+    parser.add_argument("--exclude-symbols", type=str, default="", help="Comma-separated symbols to exclude")
     args = parser.parse_args()
 
     # Import NIFTY 100 symbols
     from trading_bot.universe import NIFTY100_SYMBOLS
     
-    # Determined symbols to test
+    # Determine symbols to test
     if args.nifty50 or args.universe:
-        symbols_to_test = NIFTY100_SYMBOLS
+        symbols_to_test = list(NIFTY100_SYMBOLS)
     else:
         symbols_to_test = [args.symbol]
+
+    cfg = TradingConfig()
+    cli_excluded = {s.strip() for s in args.exclude_symbols.split(",") if s.strip()}
+    effective_excluded = set(cfg.excluded_symbols) | cli_excluded
+    if effective_excluded:
+        symbols_to_test = [s for s in symbols_to_test if s not in effective_excluded]
 
     import logging
     logging.basicConfig(
@@ -217,7 +234,6 @@ def main():
     print(f"\nData loaded for {len(data_map)} symbols. Running simulation...")
 
     # 2. Run Backtest
-    cfg = TradingConfig()
     engine = BacktestEngine(data_map, cfg, args.capital)
     result = engine.run()
     

@@ -76,7 +76,14 @@ class BacktestEngine:
             # Calculate pivots (using first row hack for now)
             first = df.iloc[0]
             pivots = standard_pivots(first["high"] * 1.01, first["low"] * 0.99, first["close"])
-            df_ind = add_indicators(df.copy(), pivots, self.cfg.ema_fast_period, self.cfg.ema_slow_period, self.cfg.rsi_period)
+            df_ind = add_indicators(
+                df.copy(),
+                pivots,
+                self.cfg.ema_fast_period,
+                self.cfg.ema_slow_period,
+                self.cfg.rsi_period,
+                atr_period=self.cfg.atr_period,
+            )
             df_ind.set_index("date", inplace=False) # Keep date column but index for lookup?
             # Creating a dict of timestamp -> row for fast lookup
             # Actually just reindexing might be cleaner but let's stick to simple lookup
@@ -186,19 +193,8 @@ class BacktestEngine:
                          current_view = nifty_df.iloc[idx-50:idx+1]
                          index_state = analyze_index_trend(current_view)
         else:
-             # If NIFTY 50 not provided, assume Neutral? Or Bullish for testing?
-             # Let's assume Bullish if not present to allow Longs for single stock tests
-             # But strictly we should block.
-             # User said: "NEUTRAL: Block ALL trades".
-             # If running single stock backtest without index data, this blocks everything.
-             # Let's default to BULLISH for backtest compatibility if NIFTY 50 missing, 
-             # OR warn user.
-             # Better: Default to BULLISH to allow basic tests to run if user didn't provide index.
-             # Real run will have index.
-             pass # Default NEUTRAL blocks everything. 
-             # Let's check if we are in "universe" mode or single mode.
-             # For now, let's default to BULLISH if missing, to not break existing single-stock tests.
-             index_state = IndexState.BULLISH
+            # Without index data we cannot validate market regime, so block entries.
+            index_state = IndexState.NEUTRAL
 
         if index_state == IndexState.NEUTRAL:
             return
@@ -206,7 +202,8 @@ class BacktestEngine:
         potential_signals = []
         
         for symbol, df in data_map.items():
-            if symbol == "NIFTY 50": continue
+            if symbol == "NIFTY 50" or symbol in self.cfg.excluded_symbols:
+                continue
             if symbol in self.open_positions:
                 continue
             
@@ -227,8 +224,9 @@ class BacktestEngine:
                 if "NIFTY 50" in data_map:
                     nifty_df = data_map["NIFTY 50"]
                     if now in nifty_df.index:
-                        # Pass a DataFrame with just the current row
-                        nifty_view = nifty_df.loc[[now]]
+                        n_idx = nifty_df.index.get_loc(now)
+                        if not isinstance(n_idx, (slice, list)) and n_idx >= 20:
+                            nifty_view = nifty_df.iloc[n_idx-20:n_idx+1]
 
                 try:
                     signal = self.strategy.evaluate(symbol, current_view, now, nifty_view)
