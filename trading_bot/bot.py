@@ -31,6 +31,10 @@ class IntradayTradingBot:
         else:
             self.symbols = [s for s in NIFTY100_SYMBOLS if s not in self.cfg.excluded_symbols]
 
+        if not self.symbols:
+            # Safety fallback so blacklist config cannot accidentally disable all trading.
+            self.symbols = list(NIFTY100_SYMBOLS)
+
         self.kite = KiteConnect(api_key=creds.api_key)
         self.kite.set_access_token(creds.access_token)
 

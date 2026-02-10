@@ -188,16 +188,16 @@ class BacktestEngine:
              if now in nifty_df.index:
                  # Get data up to now for trend analysis
                  idx = nifty_df.index.get_loc(now)
-                 if not (isinstance(idx, slice) or isinstance(idx, list)): 
-                     if idx >= 50:
-                         current_view = nifty_df.iloc[idx-50:idx+1]
+                 if not (isinstance(idx, slice) or isinstance(idx, list)):
+                     if idx >= 20:
+                         current_view = nifty_df.iloc[idx-20:idx+1]
                          index_state = analyze_index_trend(current_view)
         else:
             # Without index data we cannot validate market regime, so block entries.
             index_state = IndexState.NEUTRAL
 
-        if index_state == IndexState.NEUTRAL:
-            return
+        # If index state is neutral/missing, strategy-level logic can still decide using
+        # available data. Do not hard-block all entries here.
 
         potential_signals = []
         
