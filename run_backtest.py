@@ -195,6 +195,9 @@ def main():
     effective_excluded = set(cfg.excluded_symbols) | cli_excluded
     if effective_excluded:
         symbols_to_test = [s for s in symbols_to_test if s not in effective_excluded]
+    if not symbols_to_test:
+        print("Warning: all symbols were excluded; falling back to default universe selection.")
+        symbols_to_test = list(NIFTY100_SYMBOLS)
 
     import logging
     logging.basicConfig(

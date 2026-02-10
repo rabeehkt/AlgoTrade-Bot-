@@ -21,6 +21,8 @@ class TradingConfig:
 
 
     # Entry quality filters
+    # Keep this reachable in practice; raise to 4 later if trade frequency is too high.
+    min_sss_score: int = 3
     min_sss_score: int = 4
     excluded_symbols: tuple[str, ...] = ("HDFCBANK", "BANKBARODA")
 
