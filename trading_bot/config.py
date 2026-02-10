@@ -16,8 +16,17 @@ class TradingConfig:
 
     # Trading window rules
     scan_start: time = time(9, 20)
-    last_entry: time = time(14, 45)
+    last_entry: time = time(11, 30)
     force_exit: time = time(15, 20)
+
+
+    # Entry quality filters
+    min_sss_score: int = 4
+    excluded_symbols: tuple[str, ...] = ("HDFCBANK", "BANKBARODA")
+
+    # ATR risk parameters
+    atr_period: int = 14
+    atr_stop_multiplier: float = 1.5
 
     # Trade frequency rules
     max_trades_per_stock_per_day: int = 1

@@ -178,16 +178,23 @@ def main():
     parser.add_argument("--real", action="store_true", help="Use real data from Kite (requires .env credentials)")
     parser.add_argument("--nifty50", action="store_true", help="Run backtest on all NIFTY 100 symbols (legacy flag name)")
     parser.add_argument("--universe", action="store_true", help="Run backtest on all NIFTY 100 symbols")
+    parser.add_argument("--exclude-symbols", type=str, default="", help="Comma-separated symbols to exclude")
     args = parser.parse_args()
 
     # Import NIFTY 100 symbols
     from trading_bot.universe import NIFTY100_SYMBOLS
     
-    # Determined symbols to test
+    # Determine symbols to test
     if args.nifty50 or args.universe:
-        symbols_to_test = NIFTY100_SYMBOLS
+        symbols_to_test = list(NIFTY100_SYMBOLS)
     else:
         symbols_to_test = [args.symbol]
+
+    cfg = TradingConfig()
+    cli_excluded = {s.strip() for s in args.exclude_symbols.split(",") if s.strip()}
+    effective_excluded = set(cfg.excluded_symbols) | cli_excluded
+    if effective_excluded:
+        symbols_to_test = [s for s in symbols_to_test if s not in effective_excluded]
 
     import logging
     logging.basicConfig(
@@ -227,7 +234,6 @@ def main():
     print(f"\nData loaded for {len(data_map)} symbols. Running simulation...")
 
     # 2. Run Backtest
-    cfg = TradingConfig()
     engine = BacktestEngine(data_map, cfg, args.capital)
     result = engine.run()
     
