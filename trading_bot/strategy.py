@@ -6,95 +6,73 @@ import pandas as pd
 
 from trading_bot.config import TradingConfig
 from trading_bot.models import SetupType, Side, TradeSignal
+from trading_bot.signal_scoring import SignalScorer
 
 
 class StrategyEngine:
     def __init__(self, cfg: TradingConfig):
         self.cfg = cfg
+        self.scorer = SignalScorer()
 
-    def evaluate(self, symbol: str, df: pd.DataFrame, now: datetime) -> TradeSignal | None:
+    def evaluate(self, symbol: str, df: pd.DataFrame, now: datetime, nifty_df: pd.DataFrame | None = None) -> TradeSignal | None:
         if len(df) < 25:
             return None
 
         candle = df.iloc[-1]
         prev = df.iloc[-2]
+        
+        nifty_candle = nifty_df.iloc[-1] if (nifty_df is not None and not nifty_df.empty) else None
 
-        bearish = candle["close"] < candle["vwap"] and candle["ema9"] < candle["ema20"] and candle["rsi"] < 45
-        bullish = candle["close"] > candle["vwap"] and candle["ema9"] > candle["ema20"] and candle["rsi"] > 55
+        # 1. Determine general direction/bias based on VWAP and EMA
+        # (Though SSS is the gate, we still need to know if we are looking for LONG or SHORT)
+        is_bullish_bias = candle["close"] > candle["vwap"]
+        is_bearish_bias = candle["close"] < candle["vwap"]
 
-        short_rejection_levels = [candle["vwap"], candle["pp"], candle["r1"]]
-        long_rejection_levels = [candle["vwap"], candle["pp"], candle["s1"]]
-
-        # Setup A: VWAP + Pivot rejection (short)
-        if (
-            bearish
-            and self._touches_resistance(candle, short_rejection_levels)
-            and candle["close"] < candle["vwap"]
-            and candle["close"] < candle["ema9"]
-            and candle["volume"] >= prev["volume"]
-        ):
-            stop = max(candle["vwap"] * 1.0025, df["high"].tail(3).max())
-            return TradeSignal(
+        # 2. Check for REJECTION or PULLBACK setups
+        # We'll create a candidate signal first, then score it.
+        
+        potential_signal = None
+        
+        if is_bearish_bias:
+            potential_signal = TradeSignal(
                 symbol=symbol,
                 side=Side.SELL,
-                setup=SetupType.REJECTION,
+                setup=SetupType.REJECTION, # Default to REJECTION, can be refined
                 entry=float(candle["close"]),
-                stop_loss=float(stop),
+                stop_loss=float(max(candle["vwap"] * 1.0025, df["high"].tail(3).max())),
                 target_1=float(candle["s1"]),
                 target_2=float(candle["s2"]),
-                reason="Bearish trend + rejection near VWAP/PP/R1 with volume confirmation",
+                reason="SSS-driven Short",
                 created_at=now,
             )
-
-        # Setup A mirror: VWAP + Pivot rejection (long)
-        if (
-            bullish
-            and self._touches_support(candle, long_rejection_levels)
-            and candle["close"] > candle["ema9"]
-            and candle["volume"] >= prev["volume"]
-        ):
-            stop = min(candle["vwap"] * 0.9975, df["low"].tail(3).min())
-            return TradeSignal(
+        elif is_bullish_bias:
+            potential_signal = TradeSignal(
                 symbol=symbol,
                 side=Side.BUY,
                 setup=SetupType.REJECTION,
                 entry=float(candle["close"]),
-                stop_loss=float(stop),
+                stop_loss=float(min(candle["vwap"] * 0.9975, df["low"].tail(3).min())),
                 target_1=float(candle["r1"]),
                 target_2=float(candle["r2"]),
-                reason="Bullish trend + rejection near VWAP/PP/S1 with volume confirmation",
+                reason="SSS-driven Long",
                 created_at=now,
             )
 
-        # Setup B: pullback continuation (short)
-        if bearish and self._is_bearish_impulse(prev) and self._pullback_short_rejection(candle):
-            stop = max(candle["vwap"], candle["high"])
-            return TradeSignal(
-                symbol=symbol,
-                side=Side.SELL,
-                setup=SetupType.PULLBACK,
-                entry=float(candle["close"]),
-                stop_loss=float(stop),
-                target_1=float(candle["s1"]),
-                target_2=float(candle["s2"]),
-                reason="Bearish impulse + pullback rejection to VWAP/EMA20/Pivot",
-                created_at=now,
-            )
+        if potential_signal:
+            # 3. Calculate SSS
+            potential_signal.score = self.scorer.calculate_score(potential_signal, candle, prev, nifty_candle)
+            potential_signal.relative_volume = candle["volume"] / candle.get("avg_vol_20", 1) if candle.get("avg_vol_20", 0) > 0 else 0
+            
+            # Rule 8: SSS >= 4
+            if potential_signal.score >= 4:
+                potential_signal.detailed_reason = (
+                    f"ENTRY_REASON: {'BULLISH' if potential_signal.side == Side.BUY else 'BEARISH'} bias detected.\n"
+                    f"SSS: {potential_signal.score} (>= 4 requirement met).\n"
+                    f"Relative Vol: {potential_signal.relative_volume:.2f}"
+                )
+                return potential_signal
 
-        # Setup B mirror: pullback continuation (long)
-        if bullish and self._is_bullish_impulse(prev) and self._pullback_long_rejection(candle):
-            stop = min(candle["vwap"], candle["low"])
-            return TradeSignal(
-                symbol=symbol,
-                side=Side.BUY,
-                setup=SetupType.PULLBACK,
-                entry=float(candle["close"]),
-                stop_loss=float(stop),
-                target_1=float(candle["r1"]),
-                target_2=float(candle["r2"]),
-                reason="Bullish impulse + pullback rejection to VWAP/EMA20/Pivot",
-                created_at=now,
-            )
+        return None
 
         return None
 

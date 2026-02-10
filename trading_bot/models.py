@@ -26,6 +26,9 @@ class TradeSignal:
     target_2: float | None
     reason: str
     created_at: datetime
+    detailed_reason: str = ""
+    score: int = 0
+    relative_volume: float = 0.0
 
 
 @dataclass

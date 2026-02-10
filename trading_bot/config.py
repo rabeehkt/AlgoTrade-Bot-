@@ -26,6 +26,8 @@ class TradingConfig:
     # Risk rules
     risk_per_trade_pct: float = 0.01
     daily_max_loss_pct: float = 0.02
+    max_trade_capital: float = 5000.0
+    risk_reward_ratio: float = 2.0
 
     # Indicator parameters
     ema_fast_period: int = 9
@@ -44,6 +46,7 @@ class TradingConfig:
 @dataclass
 class Credentials:
     api_key: str
+    api_secret: str
     access_token: str
 
 

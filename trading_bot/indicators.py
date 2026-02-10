@@ -38,6 +38,8 @@ def add_indicators(df_5m: pd.DataFrame, pivots: dict[str, float], ema_fast: int,
     for key, value in pivots.items():
         df[key] = value
     df["avg_vol_20"] = df["volume"].rolling(20).mean()
+    df["range"] = df["high"] - df["low"]
+    df["avg_range_20"] = df["range"].rolling(20).mean()
     df["body"] = (df["close"] - df["open"]).abs()
     df["avg_body_20"] = df["body"].rolling(20).mean()
     return df
