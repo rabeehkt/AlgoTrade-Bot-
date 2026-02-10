@@ -36,6 +36,8 @@ class StrategyEngine:
         index_state: IndexState | None = None
         if nifty_df is not None and not nifty_df.empty:
             index_state = analyze_index_trend(nifty_df)
+        # Market regime filter: buys only in bullish index state, sells only in bearish.
+        index_state = analyze_index_trend(nifty_df) if nifty_df is not None and not nifty_df.empty else IndexState.NEUTRAL
 
         is_bullish_bias = candle["close"] > candle["vwap"]
         is_bearish_bias = candle["close"] < candle["vwap"]
@@ -48,6 +50,7 @@ class StrategyEngine:
         potential_signal = None
 
         if is_bearish_bias and (index_state is None or index_state == IndexState.BEARISH):
+        if is_bearish_bias and index_state == IndexState.BEARISH:
             entry = float(candle["close"])
             stop_loss = entry + atr_risk
             target_1 = entry - (atr_risk * self.cfg.risk_reward_ratio)
@@ -63,6 +66,7 @@ class StrategyEngine:
                 created_at=now,
             )
         elif is_bullish_bias and (index_state is None or index_state == IndexState.BULLISH):
+        elif is_bullish_bias and index_state == IndexState.BULLISH:
             entry = float(candle["close"])
             stop_loss = entry - atr_risk
             target_1 = entry + (atr_risk * self.cfg.risk_reward_ratio)
@@ -96,6 +100,7 @@ class StrategyEngine:
             f"ENTRY_REASON: {potential_signal.side.value} | "
             f"SSS={potential_signal.score} (min={self.cfg.min_sss_score}) | "
             f"ATR={atr:.2f} | IndexState={index_state.value if index_state else 'MISSING'} | "
+            f"ATR={atr:.2f} | IndexState={index_state.value} | "
             f"RelVol={potential_signal.relative_volume:.2f}"
         )
         return potential_signal
