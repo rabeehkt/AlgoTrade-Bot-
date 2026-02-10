@@ -26,15 +26,26 @@ class DailyRiskState:
     def register_trade(self, symbol: str) -> None:
         self.total_trades += 1
         self.symbol_trade_count[symbol] = self.symbol_trade_count.get(symbol, 0) + 1
+        print(f"DEBUG: Registered trade for {symbol}. Total daily trades: {self.total_trades}")
 
     def register_exit(self, pnl: float) -> None:
         self.realized_pnl += pnl
 
+    def reset(self) -> None:
+        """Resets daily trading state (pnl and counts)."""
+        self.realized_pnl = 0.0
+        self.total_trades = 0
+        self.symbol_trade_count.clear()
 
-def position_size(capital: float, risk_pct: float, entry: float, stop_loss: float) -> int:
+
+def position_size(capital: float, max_trade_capital: float, risk_pct: float, entry: float, stop_loss: float) -> int:
     risk_amount = capital * risk_pct
     sl_distance = abs(entry - stop_loss)
     if sl_distance <= 0:
         return 0
-    qty = int(risk_amount // sl_distance)
-    return max(qty, 0)
+    qty_risk = int(risk_amount // sl_distance)
+    
+    # Capital limit
+    qty_capital = int(max_trade_capital // entry)
+    
+    return max(min(qty_risk, qty_capital), 0)

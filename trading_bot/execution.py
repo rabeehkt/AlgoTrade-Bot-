@@ -80,11 +80,12 @@ class OrderExecutor:
                     return None
         return None
 
-    def place_exit(self, position: OpenPosition, reason: str, exit_price: float | None = None) -> str | None:
+    def place_exit(self, position: OpenPosition, reason: str, exit_price: float | None = None, qty: int | None = None) -> str | None:
         if self.kill_switch:
             return None
 
         transaction_type = self.kite.TRANSACTION_TYPE_SELL if position.side == Side.BUY else self.kite.TRANSACTION_TYPE_BUY
+        quantity = qty if qty is not None else position.quantity
 
         for attempt in range(self.cfg.max_order_retries + 1):
             try:
@@ -93,7 +94,7 @@ class OrderExecutor:
                     exchange=self.kite.EXCHANGE_NSE,
                     tradingsymbol=position.symbol,
                     transaction_type=transaction_type,
-                    quantity=position.quantity,
+                    quantity=quantity,
                     product=self.kite.PRODUCT_MIS,
                     order_type=self.kite.ORDER_TYPE_MARKET,
                     validity=self.kite.VALIDITY_DAY,
@@ -103,7 +104,7 @@ class OrderExecutor:
                     position.symbol,
                     position.setup.value,
                     position.side.value,
-                    position.quantity,
+                    quantity,
                     position.entry,
                     position.stop_loss,
                     position.target_1,
@@ -111,6 +112,8 @@ class OrderExecutor:
                     reason,
                     f"{exit_price:.2f}" if exit_price is not None else "NA",
                 )
+                # Log detailed exit reason
+                self.logger.info(f"EXIT_REASON:\n{reason}")
                 return order_id
             except Exception as err:
                 self._record_failure(err)

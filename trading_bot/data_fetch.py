@@ -15,8 +15,22 @@ class DataClient:
         self.instrument_map = self._load_instruments()
 
     def _load_instruments(self) -> dict[str, int]:
+        # Load NSE Equity
         instruments = self.kite.instruments(exchange=self.cfg.exchange)
-        return {item["tradingsymbol"]: item["instrument_token"] for item in instruments}
+        mapping = {item["tradingsymbol"]: item["instrument_token"] for item in instruments}
+        
+        # Load Indices (specifically NIFTY 50)
+        try:
+            indices = self.kite.instruments(exchange="INDICES")
+            for item in indices:
+                if item["name"] == "NIFTY 50":
+                    mapping["NIFTY 50"] = item["instrument_token"]
+                    break
+        except Exception as e:
+            # Log warning but don't crash if indices fail (mock mode might not have it)
+            print(f"Warning: Could not fetch indices: {e}")
+            
+        return mapping
 
     def token_for(self, symbol: str) -> int:
         if symbol not in self.instrument_map:

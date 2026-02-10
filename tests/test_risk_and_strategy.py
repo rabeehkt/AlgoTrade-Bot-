@@ -45,7 +45,10 @@ def test_risk_limits_and_position_size() -> None:
     state.register_exit(-3000)
     assert not state.can_trade("RELIANCE", 2, 1)
 
-    assert position_size(100000, 0.01, 100.0, 99.0) == 1000
+    # Risk = 1000, SL dist = 1 -> Qty Risk = 1000
+    # Capital = 5000, Entry = 100 -> Qty Cap = 50
+    # Expected = min(1000, 50) = 50
+    assert position_size(100000, 5000, 0.01, 100.0, 99.0) == 50
 
 
 def test_setup_a_long_uses_support_levels() -> None:
@@ -74,3 +77,39 @@ def test_setup_a_long_uses_support_levels() -> None:
     assert signal is not None
     assert signal.side.value == "BUY"
     assert signal.setup.value == "Rejection"
+
+
+def test_setup_a_short_uses_resistance_levels() -> None:
+    cfg = TradingConfig()
+    engine = StrategyEngine(cfg)
+    df = _base_df()
+
+    # Previous candle for volume comparison.
+    df.loc[28, "volume"] = 1000
+
+    # Last candle satisfies bearish trend and touches R1 (resistance).
+    df.loc[29, "close"] = 98.5
+    df.loc[29, "open"] = 99.2
+    df.loc[29, "vwap"] = 100.0
+    df.loc[29, "ema9"] = 99.0
+    df.loc[29, "ema20"] = 99.5
+    df.loc[29, "rsi"] = 40.0
+    df.loc[29, "high"] = 102.1  # Touches R1 (102.0)
+    df.loc[29, "low"] = 98.0
+    df.loc[29, "volume"] = 1200
+    df.loc[29, "pp"] = 100.0
+    df.loc[29, "s1"] = 98.0
+    df.loc[29, "r1"] = 102.0
+
+    signal = engine.evaluate("INFY", df, datetime.now())
+    assert signal is not None
+    assert signal.side.value == "SELL"
+    assert signal.setup.value == "Rejection"
+
+
+def test_insufficient_data_returns_none() -> None:
+    cfg = TradingConfig()
+    engine = StrategyEngine(cfg)
+    df = pd.DataFrame()
+    signal = engine.evaluate("INFY", df, datetime.now())
+    assert signal is None
